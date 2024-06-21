@@ -8,8 +8,8 @@ Diffusion models have significantly advanced image synthesis, excelling in visua
 
 ## Contributions
 
-Single Prompt Generation: A novel approach to replace the multi-prompt CFG in diffusion models with a single prompt without losing visual quality in the generated images.
-Prompt-to-Image Dataset: A comprehensive dataset with complex prompts and various negative prompt settings for object removal and quality improvement, including inversion latents and embeddings.
+#### Single Prompt Generation: A novel approach to replace the multi-prompt CFG in diffusion models with a single prompt without losing visual quality in the generated images.
+#### Prompt-to-Image Dataset: A comprehensive dataset with complex prompts and various negative prompt settings for object removal and quality improvement, including inversion latents and embeddings.
 
 ## Methodology
 
