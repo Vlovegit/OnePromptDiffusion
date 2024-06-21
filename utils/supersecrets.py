@@ -1,0 +1,3 @@
+neptune_project='vgpara96/diffusion-validation'
+neptune_api_token="eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiI1ZjQzMzUzMS0yYjNlLTQyNjktYTIxZS1jMTc3NmRlNjMxMzEifQ=="
+huggingface_token = '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'

@@ -1,25 +1,31 @@
 from typing import Optional, Union, Tuple, List, Callable, Dict
 from tqdm.notebook import tqdm
 import torch
-from utils import SimpleDaamPipeline
+import sys
+ 
+sys.path.insert(1, '/home/myid/vg80700/gits/OnePromptDiffusion/utils')
+
+# from ..utils import SimpleDaamPipeline
+from load_coco_set import load_coco_dataset
+from pipes import SimpleDaamPipeline
+# from utils import SimpleDaamPipeline
 from diffusers import DDIMScheduler, StableDiffusionPipeline
 import torch.nn.functional as nnf
 import numpy as np
 import abc
-from utils import ptp_utils
+from ptp_utils import *
 import shutil
 from torch.optim.adam import Adam
 from PIL import Image
-from utils import load_coco_dataset
-import utils.supersecrets as ss
+import supersecrets as ss
 import neptune
 import os
 from neptune.types import File
 import h5py as h5
-from utils import detect_object
+from clip_seg import detect_object
 import pandas as pd
 from datetime import datetime
-import utils.config as env
+import config as env
 
 # Load the model
 
@@ -44,19 +50,19 @@ experimentName = "Quality Filter COCO Dataset"
 if experimentName is not None:
     run = neptune.init_run(
         project=ss.neptune_project,
-        api_token=ss.api_token,
+        api_token=ss.neptune_api_token,
         name=experimentName,
         tags=['Quality Filter']
     )
 
 #Process set of prompts at a time to avoid memory issues
-NUM_PROMPTS = 2000
+NUM_PROMPTS = 50
 
 # Configuration
 i = 0
 
 negative_prompts_list = [
-    "low resolution"
+    "low resolution",
     "blurry",
     "overexposed",
     "noise",
@@ -71,7 +77,7 @@ negative_prompts_list = [
 
 prompt_list = []
 
-for i in range(0,32):
+for i in range(0,1):
     print(f'Processing set of prompts: {i*NUM_PROMPTS} to {(i+1)*NUM_PROMPTS}')
     coco_ids, prompts, negative_promts, images = load_coco_dataset(NUM_PROMPTS,i*NUM_PROMPTS)
     working_coco_ids = {}

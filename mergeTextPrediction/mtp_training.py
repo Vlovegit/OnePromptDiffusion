@@ -1,25 +1,27 @@
-import sys
-from typing import Optional, Union, Tuple, List, Callable, Dict
-from tqdm.notebook import tqdm
 import torch
+import sys
+ 
+sys.path.insert(1, '/home/myid/vg80700/gits/OnePromptDiffusion/utils')
+sys.path.insert(2, '/home/myid/vg80700/gits/OnePromptDiffusion/mergeTextOptimization')
+
+from pipes import SimpleDaamPipeline
 from diffusers import DDIMScheduler, StableDiffusionPipeline
 import torch.nn.functional as nnf
-import numpy as np
-from utils import ptp_utils
+import abc
+from ptp_utils import *
 import shutil
 from torch.optim.adam import Adam
-from torch.optim.lr_scheduler import LambdaLR
-from PIL import Image
-from utils import load_coco_dataset
-import utils.supersecrets as ss
+import supersecrets as ss
 import neptune
 import os
-from neptune.types import File
 import h5py as h5
-from model import LearnedEmbeddingModel
-from utils import SimpleDaamPipeline
+import config as env
+from torch.optim.lr_scheduler import LambdaLR
+
+from model import LearnedEmbeddingModel 
 import random
-import utils.config as env
+
+
 
 scheduler = DDIMScheduler(beta_start=0.00085, beta_end=0.012, beta_schedule="scaled_linear", clip_sample=False, set_alpha_to_one=False)
 MY_TOKEN = ss.huggingface_token
@@ -29,7 +31,7 @@ GUIDANCE_SCALE = env.GUIDANCE_SCALE
 MAX_NUM_WORDS = 77
 device = torch.device(env.device) if torch.cuda.is_available() else torch.device('cpu')
 ldm_stable = SimpleDaamPipeline.from_pretrained("CompVis/stable-diffusion-v1-4", use_auth_token=MY_TOKEN, scheduler=scheduler, seed=2551055002497238).to(device)
-learningmodel = LearnedEmbeddingModel()
+learningmodel = LearnedEmbeddingModel(env.device)
 learningmodel = learningmodel.to(device)
 optimizer = Adam(learningmodel.parameters(), lr=1e-2)  # Adam optimizer with ith learning rate of 0.01
 lambda1 = lambda epoch: 1 - epoch / 100
@@ -47,11 +49,11 @@ experimentName = f"MLP Model Training with learning rate {1e-2}"
 if experimentName is not None:
     run = neptune.init_run(
         project=ss.neptune_project,
-        api_token=ss.api_token,
+        api_token=ss.neptune_api_token,
         name=experimentName,
-        tags=['MTP Training']
+        tags=['Model Training']
     )
-
+os.makedirs(env.object_model, exist_ok=True)
 torch.save(learningmodel.state_dict(), f"{env.object_model}/mto_object_untrained.pth")
 #Find the learned embeddings
 dataset_folder = env.object_dataset
@@ -83,7 +85,8 @@ print(f'Train Files: {train_files}')
 print(f'Validation Files: {val_files}')
 
 loss_values = {}
-for epoch in range(100):
+epochs = 10
+for epoch in range(epochs):
     total_train_loss = 0
     i = 0
     learningmodel.train()
@@ -210,9 +213,15 @@ for epoch in range(100):
         break
 
     # Save the loss values to csv file
-    with open('/home/myid/vg80700/gits/models/loss_values.csv', 'w') as f:
+    with open(f'{env.object_model}/loss_values.csv', 'w') as f:
         for key in loss_values.keys():
             f.write("%s,%s\n"%(key,loss_values[key]))
+
+# #Delete the evaluation files
+# for filename in val_files:
+#     file_path = os.path.join(eval_folder, filename)
+#     os.remove(file_path)
+
 
 torch.save(learningmodel.state_dict(), f"{env.object_model}/mto_object_trained.pth")
 #Log the train and val files list to neptune

@@ -1,24 +1,36 @@
 from typing import Optional, Union, Tuple, List, Callable, Dict
 from tqdm.notebook import tqdm
 import torch
-from utils import SimpleDaamPipeline
+import sys
+import utils.config as env
+
+print(env.device)
+ 
+sys.path.insert(1, '/home/myid/vg80700/gits/OnePromptDiffusion/utils')
+sys.path.insert(2, '/home/myid/vg80700/gits/OnePromptDiffusion/mergeTextOptimization')
+
+# from ..utils import SimpleDaamPipeline
+from load_coco_set import load_coco_ids
+from pipes import SimpleDaamPipeline
+# from utils import SimpleDaamPipeline
 from diffusers import DDIMScheduler, StableDiffusionPipeline
 import torch.nn.functional as nnf
 import numpy as np
-from utils import ptp_utils
+import abc
+from ptp_utils import *
 import shutil
 from torch.optim.adam import Adam
 from PIL import Image
-from utils import load_coco_ids
-import mergeTextOptimization.modified_nto as mto
-import utils.supersecrets as ss
+import supersecrets as ss
 import neptune
 import os
 from neptune.types import File
 import h5py as h5
+from clip_seg import detect_object
 import pandas as pd
-import lpips
-import utils.config as env
+from datetime import datetime
+import config as env
+from modified_nto import MergeTextOptimization as mto
 
 
 scheduler = DDIMScheduler(beta_start=0.00085, beta_end=0.012, beta_schedule="scaled_linear", clip_sample=False, set_alpha_to_one=False)
@@ -29,7 +41,7 @@ GUIDANCE_SCALE = env.GUIDANCE_SCALE
 MAX_NUM_WORDS = 77
 device = torch.device(env.device) if torch.cuda.is_available() else torch.device('cpu')
 ldm_stable = SimpleDaamPipeline.from_pretrained("CompVis/stable-diffusion-v1-4", use_auth_token=MY_TOKEN, scheduler=scheduler, seed=2551055002497238).to(device)
-mto_inversion = mto(ldm_stable)
+mto_inversion = mto(ldm_stable, env.NUM_DDIM_STEPS, env.GUIDANCE_SCALE, env.device)
 
 try:
     ldm_stable.disable_xformers_memory_efficient_attention()
@@ -38,19 +50,21 @@ except AttributeError:
 tokenizer = ldm_stable.tokenizer
 
 #Neptune Configuration
-experimentName = "Null Dataset Creation"
+experimentName = "Empty Dataset Creation"
 
 if experimentName is not None:
     run = neptune.init_run(
         project=ss.neptune_project,
-        api_token=ss.api_token,
+        api_token=ss.neptune_api_token,
         name=experimentName,
-        tags=['null_dataset']
+        tags=['empty_dataset']
     )
 
 BATCH_SIZE = env.file_batchsize
 
-coco_id_list = os.listdir(env.object_cocoids)
+coco_id_list = os.listdir(env.empty_cocoids)
+
+# coco_id_list = coco_id_list[:10]
 
 coco_ids, prompts, negative_promts, images = load_coco_ids(coco_id_list)
 
@@ -63,8 +77,8 @@ data = {
 
 df = pd.DataFrame(data)
 
-os.makedirs(env.null_dataset, exist_ok=True)
-DATA_FILE = f"{env.null_dataset}/dataset_null_0.h5"
+os.makedirs(env.empty_dataset, exist_ok=True)
+DATA_FILE = f"{env.empty_dataset}/dataset_empty_0.h5"
 str_dtype = h5.string_dtype(encoding='utf-8', length=10)
 str_prompt_dtype = h5.string_dtype(encoding='utf-8', length=300)
 str_np_dtype = h5.string_dtype(encoding='utf-8', length=50)
@@ -78,16 +92,16 @@ for coco_id in coco_id_list:
         specific_data = df[df['coco_id'] == int(coco_id)]
         prompt = specific_data['prompt'].values[0]
         negative_prompt = specific_data['negative_prompt'].values[0]
-        image_pos_path = f"{env.null_cocoids}/{coco_id}/pos.png"
+        image_pos_path = f"{env.empty_cocoids}/{coco_id}/pos.png"
         image_pos = Image.open(image_pos_path)
-        image_neg_path = f"{env.null_cocoids}/{coco_id}/cfg.png"
+        image_neg_path = f"{env.empty_cocoids}/{coco_id}/cfg.png"
         image_neg = Image.open(image_neg_path)
         print(f'Processing {coco_id}')
         (image_gt, image_enc), x_t, merged_embeddings, cond_embeddings, uncond_embeddings, latents = mto_inversion.invert(image_neg_path, prompt, "", offsets=(0,0,200,0), verbose=True)
-        image_inv, x_t1 = mto_inversion.run_and_display_merged(merged_embeddings[-1], run_baseline=False, latent=x_t, verbose=False)
-        lpips_score = ptp_utils.compute_lpips(image_gt, image_inv[0])
+        image_inv, x_t1 = mto_inversion.run_and_display_merged(merged_embeddings[-1], ldm_stable, run_baseline=False, latent=x_t, verbose=False)
+        lpips_score = compute_lpips(image_gt, image_inv[0])
         image_inv = Image.fromarray(image_inv[0].astype('uint8'), 'RGB')
-        image_inv.save(f"{env.null_cocoids}/{coco_id}/cfg_inv.png")
+        image_inv.save(f"{env.empty_cocoids}/{coco_id}/cfg_inv.png")
         
         run[f'output/images/{coco_id}'].append(image_pos,description=f'Image Positive Prompt Only : for \n prompt:{prompt}\n and no CFG\n COCO id: {coco_id}')
         run[f'output/images/{coco_id}'].append(image_neg,description=f'Image for \n prompt:{prompt}\n and with CFG\n COCO id: {coco_id}')
@@ -141,7 +155,7 @@ for coco_id in coco_id_list:
                 file.flush()
                 file.close()
                 print(f'Processed {i} prompts')
-                DATA_FILE = f'{env.null_dataset}/dataset_null_{int((i/BATCH_SIZE))+1}.h5'
+                DATA_FILE = f'{env.empty_dataset}/dataset_empty_{int((i/BATCH_SIZE))}.h5'
                 print(f'New file name created {DATA_FILE}')
         else:
             print(f'LPIPS Score for {coco_id} is {lpips_score} and is greater than 0.25, not saving in dataset')

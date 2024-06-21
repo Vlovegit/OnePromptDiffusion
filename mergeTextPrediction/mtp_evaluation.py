@@ -1,29 +1,26 @@
-import sys
-from typing import Optional, Union, Tuple, List, Callable, Dict
-from tqdm.notebook import tqdm
 import torch
+import sys
+ 
+sys.path.insert(1, '/home/myid/vg80700/gits/OnePromptDiffusion/utils')
+sys.path.insert(2, '/home/myid/vg80700/gits/OnePromptDiffusion/mergeTextOptimization')
+
+from pipes import SimpleDaamPipeline
 from diffusers import DDIMScheduler, StableDiffusionPipeline
 import torch.nn.functional as nnf
-import numpy as np
-from utils import ptp_utils
+import abc
+from ptp_utils import *
 import shutil
 from torch.optim.adam import Adam
-from torch.optim.lr_scheduler import LambdaLR
-from PIL import Image
-from utils import load_coco_dataset
-import utils.supersecrets as ss
+import supersecrets as ss
 import neptune
 import os
-from neptune.types import File
 import h5py as h5
-from model import LearnedEmbeddingModel
-from utils import SimpleDaamPipeline
-import random
-import utils.config as env
-from transformers import CLIPProcessor, CLIPModel
-from torch.nn.functional import cosine_similarity
-import mergeTextOptimization.modified_nto as mto
+import config as env
+from model import LearnedEmbeddingModel 
+from modified_nto import MergeTextOptimization as mto
 import pandas as pd
+from PIL import Image
+from neptune.types import File
 
 # Load the model
 scheduler = DDIMScheduler(beta_start=0.00085, beta_end=0.012, beta_schedule="scaled_linear", clip_sample=False, set_alpha_to_one=False)
@@ -34,21 +31,21 @@ GUIDANCE_SCALE = env.GUIDANCE_SCALE
 MAX_NUM_WORDS = 77
 device = torch.device(env.device) if torch.cuda.is_available() else torch.device('cpu')
 ldm_stable = SimpleDaamPipeline.from_pretrained("CompVis/stable-diffusion-v1-4", use_auth_token=MY_TOKEN, scheduler=scheduler, seed=2551055002497238).to(device)
-mto_inversion = mto(ldm_stable)
+mto_inversion = mto(ldm_stable, env.NUM_DDIM_STEPS, env.GUIDANCE_SCALE, env.device)
 
 model_path_untrained = f"{env.object_model}/mto_object_untrained.pth"
 model_path_trained = f"{env.object_model}/mto_object_trained.pth"
 
 
 # For the untrained model
-learningmodeluntrained = LearnedEmbeddingModel()
+learningmodeluntrained = LearnedEmbeddingModel(env.device)
 state_dict_untrained = torch.load(model_path_untrained, map_location=env.device) # Correctly loading from path
 learningmodeluntrained.load_state_dict(state_dict_untrained)
 learningmodeluntrained.to(device)
 learningmodeluntrained.eval()
 
 # For the model with the best training performance
-learningmodeltrainedbest = LearnedEmbeddingModel()
+learningmodeltrainedbest = LearnedEmbeddingModel(env.device)
 state_dict_trained_best = torch.load(model_path_trained, map_location=env.device) # Correctly loading from path
 learningmodeltrainedbest.load_state_dict(state_dict_trained_best)
 learningmodeltrainedbest.to(device)
@@ -66,9 +63,9 @@ experimentName = "MLP Model Evaluation"
 if experimentName is not None:
     run = neptune.init_run(
         project=ss.neptune_project,
-        api_token=ss.api_token,
+        api_token=ss.neptune_api_token,
         name=experimentName,
-        tags=['MTP Evaluation']
+        tags=['empty_dataset']
     )
 
 # Initialize list to store score differences along with COCO IDs
@@ -115,13 +112,13 @@ for filename in os.listdir(dataset_folder):
 
                     merged_embeddings_untrained = learningmodeluntrained(cond_embeddings, uncond_embeddings)
                     merged_embeddings_trained_best = learningmodeltrainedbest(cond_embeddings, uncond_embeddings)
-                    image_inv_ut, x_t1 = mto_inversion.run_and_display_merged(merged_embeddings_untrained, run_baseline=False, latent=latent, verbose=False)
-                    image_inv_best, x_t1 = mto_inversion.run_and_display_merged(merged_embeddings_trained_best, run_baseline=False, latent=latent, verbose=False)
+                    image_inv_ut, x_t1 = mto_inversion.run_and_display_merged(merged_embeddings_untrained, ldm_stable, run_baseline=False, latent=latent, verbose=False)
+                    image_inv_best, x_t1 = mto_inversion.run_and_display_merged(merged_embeddings_trained_best, ldm_stable, run_baseline=False, latent=latent, verbose=False)
                     
                     # Compute LPIPS scores
-                    lpips_score_ut = ptp_utils.compute_lpips(image_inv_ut[0], image_neg)
+                    lpips_score_ut = compute_lpips(image_inv_ut[0], image_neg)
                     lpips_score_ut = round(lpips_score_ut, 4)
-                    lpips_score_best = ptp_utils.compute_lpips(image_inv_best[0], image_neg)
+                    lpips_score_best = compute_lpips(image_inv_best[0], image_neg)
                     lpips_score_best = round(lpips_score_best, 4)
                     lpips_difference = lpips_score_ut - lpips_score_best
                     lpips_differences.append((key, lpips_difference, lpips_score_ut, lpips_score_best))
@@ -141,8 +138,8 @@ for filename in os.listdir(dataset_folder):
                     image_inv = Image.fromarray(image_inv, 'RGB')
                     image_neg.save(f'{image_neg_path}/image_gt.jpg')
                     # Compute FID, IS and Semantic Similarity                   
-                    fid_score_gt_ut = ptp_utils.compute_fid(image_neg_path, image_ut_path)
-                    fid_score_gt_best = ptp_utils.compute_fid(image_neg_path, image_best_path)
+                    fid_score_gt_ut = compute_fid(image_neg_path, image_ut_path)
+                    fid_score_gt_best = compute_fid(image_neg_path, image_best_path)
                     if fid_score_gt_ut is not None and fid_score_gt_best is not None:
                         fid_score_gt_ut = round(float(fid_score_gt_ut), 4)
                         fid_score_gt_best = round(float(fid_score_gt_best), 4)
@@ -273,7 +270,8 @@ df_metric_scores = pd.DataFrame(combined_data)
 
 # Step 3: Use pandas ExcelWriter to save all DataFrames
 timestamp = pd.Timestamp.now().strftime('%Y-%m-%d_%H-%M-%S')
-filename = f'{env.performance_analysis}_object_{timestamp}.xlsx'
+os.makedirs(env.performance_analysis, exist_ok=True)
+filename = f'{env.performance_analysis}/object_{timestamp}.xlsx'
 with pd.ExcelWriter(filename) as writer:
     df_best_lpips.to_excel(writer, sheet_name='Top 100 Best LPIPS', index=False)
     df_worst_lpips.to_excel(writer, sheet_name='Top 100 Worst LPIPS', index=False)

@@ -1,10 +1,17 @@
+from typing import Optional, Union, Tuple, List, Callable, Dict
+from tqdm.notebook import tqdm
+import torch
+import sys
+ 
+sys.path.insert(1, '/home/myid/vg80700/gits/OnePromptDiffusion/utils')
+
 from typing import Optional, Union
 from tqdm.notebook import tqdm
 import torch
 from diffusers import DDIMScheduler
 import torch.nn.functional as nnf
 import numpy as np
-from utils import ptp_utils
+from ptp_utils import *
 from torch.optim.adam import Adam
 from PIL import Image
 
@@ -147,8 +154,7 @@ class MergeTextOptimization:
     
     def invert(self, image_path: str, prompt: str, negative_prompt: str, offsets=(0,0,0,0), num_inner_steps=10, early_stop_epsilon=1e-5, verbose=False):
         self.init_prompt(prompt,negative_prompt)
-        ptp_utils.register_attention_control(self.model, None)
-        image_gt = self.load_512_mod(image_path, *offsets)
+        image_gt = self.load_512_mod(image_path)
         if verbose:
             print("DDIM inversion...")
         image_rec, ddim_latents = self.ddim_inversion(image_gt)
@@ -157,7 +163,7 @@ class MergeTextOptimization:
         learned_embeddings, uncond_embeddings, cond_embeddings = self.null_optimization(ddim_latents, num_inner_steps, early_stop_epsilon)
         return (image_gt, image_rec), ddim_latents[-1],learned_embeddings, cond_embeddings, uncond_embeddings, ddim_latents
     
-    def load_512_mod(image_path, left=0, right=0, top=0, bottom=0):
+    def load_512_mod(self, image_path):
         if type(image_path) is str:
             image = np.array(Image.open(image_path))[:, :, :3]
         else:
@@ -168,8 +174,9 @@ class MergeTextOptimization:
     
     @torch.no_grad()
     def text2image_ldm_stable_merged(
+        self,
         model,
-        learned_embedding:  None,
+        learned_embedding: None,
         num_inference_steps: int = 50,
         guidance_scale: Optional[float] = 7.5,
         generator: Optional[torch.Generator] = None,
@@ -180,13 +187,13 @@ class MergeTextOptimization:
         height = width = 512
         batch_size = 1
 
-        latent, latents = ptp_utils.init_latent(latent, model, height, width, generator, batch_size)
+        latent, latents = init_latent(latent, model, height, width, generator, batch_size)
         model.scheduler.set_timesteps(num_inference_steps)
         for i, t in enumerate(tqdm(model.scheduler.timesteps[-start_time:])):
-            latents = ptp_utils.diffusion_step_mod(model, latents, learned_embedding, t, guidance_scale, low_resource=False)
+            latents = diffusion_step_mod(model, latents, learned_embedding, t, guidance_scale, low_resource=False)
             
         if return_type == 'image':
-            image = ptp_utils.latent2image(model.vae, latents)
+            image = latent2image(model.vae, latents)
         else:
             image = latents
         return image, latent
@@ -196,9 +203,9 @@ class MergeTextOptimization:
             print("w.o. prompt-to-prompt")
             images, latent = self.run_and_display_merged(learned_embedding, latent=latent, run_baseline=False, generator=generator)
             print("with prompt-to-prompt")
-        images, x_t = self.text2image_ldm_stable_merged(ldm_stable, learned_embedding,latent=latent, num_inference_steps=self.NUM_DDIM_STEPS, guidance_scale=self.GUIDANCE_SCALE, generator=generator)
+        images, x_t = self.text2image_ldm_stable_merged(ldm_stable, learned_embedding, latent=latent, num_inference_steps=self.NUM_DDIM_STEPS, guidance_scale=self.GUIDANCE_SCALE, generator=generator)
         if verbose:
-            ptp_utils.view_images(images)
+            view_images(images)
         return images, x_t
         
     

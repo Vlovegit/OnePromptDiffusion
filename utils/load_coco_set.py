@@ -7,11 +7,12 @@ from pycocotools.coco import COCO
 from PIL import Image
 import torch
 import os
+import config as env
 
 #?set file paths
-image_directory = '/home/myid/vg80700/gits/train2017'
-annotation_file = '/home/myid/vg80700/gits/annotations/captions_train2017.json'
-annotation_keyfile = '/home/myid/vg80700/gits/annotations/instances_train2017.json'
+image_directory = env.image_directory
+annotation_file = env.annotation_file
+annotation_keyfile = env.annotation_keyfile
 
 # Initialize COCO API
 coco = COCO(annotation_keyfile)
@@ -99,14 +100,8 @@ def load_coco_dataset(no_of_prompts:int, skip_count:int=0):
 
     for key in testingKeys:
 
-        # print('I am here')
-
-        # print('Prompt : ', key)
-
         #?generate prompts and np
         caption = annotations_dict[key][0]
-
-        # print('Caption : ', caption)
 
         #?load the oriignal COCO image and masks (to help pick the negative prompt)
         try:
@@ -130,7 +125,6 @@ def load_coco_dataset(no_of_prompts:int, skip_count:int=0):
         #get the name of the segmentation
         segmentation_word = annotation_categories[mask_ord[1]]
         #?generate the prompt & n prompt
-        # caption = caption.replace(segmentation_word, '')
         prompt.append(caption)
         negative_prompt.append(segmentation_word)
         coco_id.append(key)
