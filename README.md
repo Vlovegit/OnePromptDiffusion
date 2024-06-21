@@ -1,5 +1,7 @@
 # One Prompt Diffusion
 
+![teaser_final](https://github.com/Vlovegit/OnePromptDiffusion/assets/22128055/7efa056b-eb7f-473d-a665-0ff8a6c9d14c)
+
 ## Abstract
 
 Diffusion models have significantly advanced image synthesis, excelling in visual quality and flexibility. Traditional models use additional negative prompts with CFG to guide the generation process. However, CFG requires the model to run twice, complicating the interpretation of the negative prompt's impact on the final image. This research proposes a method to generate a single prompt that produces images of comparable quality to the two-prompt CFG approach, achieving up to 2x speedup and 20% memory reduction.
